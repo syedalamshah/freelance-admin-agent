@@ -14,6 +14,9 @@ class PaymentRecord(BaseModel):
     document_type: Literal["invoice", "payment_confirmation"] = Field(
         description="Whether the email is an invoice sent by the freelancer or a payment confirmation received by the freelancer"
     )
+    invoice_number: str | None = Field(
+        description="The invoice number mentioned in the email, without a leading #, or null when it is not stated"
+    )
     client_name: str | None = Field(
         description="The client or company name, or null when it is not stated"
     )
@@ -39,7 +42,8 @@ Classify the email as:
 - invoice: an invoice or billing request sent by the freelancer to a client.
 - payment_confirmation: a message confirming that money was sent to the freelancer.
 
-Extract the primary client name, amount, currency, and relevant date from the email.
+Extract the invoice number, primary client name, amount, currency, and relevant date
+from the email. Preserve the invoice number as a string and remove a leading '#'.
 Do not confuse invoice due dates with payment dates: use the date most relevant to
 this document's event. For payment confirmations, include concise notes about fees,
 delays, deductions, or other payment issues when they are mentioned. Use null when a
