@@ -69,6 +69,20 @@ def add_record(record: dict) -> None:
         )
 
 
+def list_invoice_numbers() -> list[str]:
+    """Return the unique invoice numbers currently tracked."""
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT invoice_number
+            FROM payment_records
+            WHERE document_type = 'invoice' AND invoice_number IS NOT NULL
+            ORDER BY invoice_number
+            """
+        ).fetchall()
+    return [row["invoice_number"] for row in rows]
+
+
 def get_status(invoice_number: str) -> dict:
     """Return the payment status for an invoice and its matching payments."""
     with _connect() as connection:
