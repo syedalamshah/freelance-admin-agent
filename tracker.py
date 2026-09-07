@@ -49,6 +49,26 @@ def _connect():
 def add_record(record: dict) -> None:
     """Insert one extracted payment record into the SQLite tracker."""
     with _connect() as connection:
+        duplicate = connection.execute(
+            """
+            SELECT 1
+            FROM payment_records
+            WHERE invoice_number IS ?
+              AND document_type IS ?
+              AND amount IS ?
+              AND sent_date IS ?
+            LIMIT 1
+            """,
+            (
+                record.get("invoice_number"),
+                record.get("document_type"),
+                record.get("amount"),
+                record.get("sent_date"),
+            ),
+        ).fetchone()
+        if duplicate is not None:
+            return
+
         connection.execute(
             """
             INSERT INTO payment_records (
