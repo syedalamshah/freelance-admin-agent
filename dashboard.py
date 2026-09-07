@@ -1,4 +1,3 @@
-import html
 import tempfile
 from pathlib import Path
 
@@ -9,13 +8,20 @@ from followup import draft_followup
 from tracker import add_record, get_status, list_invoice_numbers
 
 
-STATUS_COLORS = {
-    "paid_full_on_time": "#d1fae5",
-    "paid_full_late": "#fef3c7",
-    "pending": "#fef3c7",
-    "paid_short_late": "#fee2e2",
-    "paid_short_on_time": "#fee2e2",
+STATUS_MARKERS = {
+    "paid_full_on_time": "🟢",
+    "paid_full_late": "🟡",
+    "pending": "🟡",
+    "paid_short_late": "🔴",
+    "paid_short_on_time": "🔴",
 }
+
+
+st.set_page_config(
+    page_title="Freelance Admin Agent",
+    page_icon="💼",
+    layout="wide",
+)
 
 
 def _process_email(email_text: str) -> dict:
@@ -39,37 +45,65 @@ def _process_email(email_text: str) -> dict:
             temporary_path.unlink(missing_ok=True)
 
 
-def _render_status_table(statuses: list[dict]) -> None:
-    rows = []
-    for status in statuses:
-        invoice_number = html.escape(str(status["invoice_number"]))
-        client_name = html.escape(str(status["client_name"] or ""))
-        status_value = status["status"]
-        background = STATUS_COLORS.get(status_value, "#e5e7eb")
-        status_badge = (
-            f'<span style="background:{background}; padding:0.2rem 0.45rem; '
-            f'border-radius:0.3rem;">{html.escape(status_value)}</span>'
-        )
-        rows.append(
-            f"<tr><td>{invoice_number}</td><td>{client_name}</td>"
-            f"<td>{status['expected_amount'] or 0:.2f}</td>"
-            f"<td>{status['received_amount'] or 0:.2f}</td>"
-            f"<td>{status_badge}</td><td>{html.escape(status['timeliness'])}</td></tr>"
-        )
+def _render_summary_metrics(statuses: list[dict]) -> None:
+    total_invoices = len(statuses)
+    overdue_or_short = sum(
+        status["status"].endswith("_late")
+        or status["status"].startswith("paid_short")
+        for status in statuses
+    )
+    pending = sum(status["status"] == "pending" for status in statuses)
+    outstanding = sum(
+        max((status["expected_amount"] or 0) - (status["received_amount"] or 0), 0)
+        for status in statuses
+    )
 
-    table = """<table style="width:100%; border-collapse:collapse;">
-<thead><tr><th>Invoice</th><th>Client</th><th>Expected</th>
-<th>Received</th><th>Status</th><th>Timeliness</th></tr></thead>
-<tbody>{}</tbody></table>""".format("".join(rows))
-    st.markdown(table, unsafe_allow_html=True)
+    total_card, issue_card, pending_card, outstanding_card = st.columns(4)
+    total_card.metric("📄 Invoices tracked", total_invoices)
+    issue_card.metric("⚠️ Overdue / short", overdue_or_short)
+    pending_card.metric("🕒 Pending", pending)
+    outstanding_card.metric("💰 Amount outstanding", f"${outstanding:,.2f}")
+
+
+def _render_status_table(statuses: list[dict]) -> None:
+    table_rows = [
+        {
+            "Invoice": status["invoice_number"],
+            "Client": status["client_name"] or "",
+            "Expected": status["expected_amount"] or 0,
+            "Received": status["received_amount"] or 0,
+            "Status": f"{STATUS_MARKERS.get(status['status'], '⚪')} {status['status']}",
+            "Timeliness": status["timeliness"],
+        }
+        for status in statuses
+    ]
+    st.dataframe(
+        table_rows,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Invoice": st.column_config.TextColumn("Invoice", width="small"),
+            "Client": st.column_config.TextColumn("Client"),
+            "Expected": st.column_config.NumberColumn(
+                "Expected", format="$%.2f", width="small"
+            ),
+            "Received": st.column_config.NumberColumn(
+                "Received", format="$%.2f", width="small"
+            ),
+            "Status": st.column_config.TextColumn(
+                "Status",
+                help="Green: paid in full on time; yellow: pending or late; red: short payment.",
+            ),
+            "Timeliness": st.column_config.TextColumn("Timeliness", width="small"),
+        },
+    )
 
 
 def main() -> None:
-    st.set_page_config(page_title="Freelance Admin Agent", page_icon="$", layout="wide")
     st.title("Freelance Admin Agent")
     st.caption("Paste an invoice or payment email to update your tracker.")
 
-    st.sidebar.header("Process Email")
+    st.sidebar.header("📄 Process Email")
     email_text = st.sidebar.text_area(
         "Email text",
         height=260,
@@ -91,15 +125,16 @@ def main() -> None:
             f"{record.get('invoice_number') or '(no invoice number)'}"
         )
 
-    st.subheader("Invoice Status")
+    st.subheader("📊 Invoice Status")
     statuses = [get_status(number) for number in list_invoice_numbers()]
     if not statuses:
         st.info("No invoices have been tracked yet.")
         return
 
+    _render_summary_metrics(statuses)
     _render_status_table(statuses)
 
-    st.subheader("Follow-ups")
+    st.subheader("💬 Follow-ups")
     followup_count = 0
     for status in statuses:
         invoice_number = status["invoice_number"]
